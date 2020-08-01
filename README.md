@@ -14,4 +14,6 @@ APIs & Services -> Credentails, Add oauth and api key
 
 Dowload secret file, rename it to client_secret.json
 
+Create new playlist to store all music
+
 in credits file add music and likes playlist ids and api key
