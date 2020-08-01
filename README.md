@@ -2,8 +2,10 @@
 
 # How to use
 
+create new project
+
 https://console.cloud.google.com/cloud-resource-manager
-create new
+
 go to project
 
 APIs & Services -> Add youtube data
