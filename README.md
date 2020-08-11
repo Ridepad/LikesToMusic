@@ -29,6 +29,6 @@ Create new playlist to store all music
 
 in credits file add music and likes playlist ids and api key
 
-#Bugs
+# Bugs
 
 Crashes on 1st use when Likes playlist have more than 500 videos
