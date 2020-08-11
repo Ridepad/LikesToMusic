@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import time
+import html
 import json
 import pickle
 import requests
@@ -123,6 +124,7 @@ class YT:
     
     def save_name_with_thumbnail(self, vidID, img, maxNameLen=150):
         vidTitle = self.get_title_requests(vidID)
+        vidTitle = html.unescape(vidTitle)
         vidTitle = vidTitle.encode()
         vidTitle = vidTitle[:maxNameLen]
         vidTitle = vidTitle.ljust(maxNameLen)
@@ -135,7 +137,7 @@ class YT:
         self.youtube.playlistItems().delete(id=vidPlsID).execute()
 
 
-    def _insert(self, vidID):
+    def pls_insert(self, vidID):
         playlistID = self.playlists['Music']
         if len(vidID) != 11:
             return f'Wrong vidID length: {vidID}'
@@ -158,7 +160,7 @@ class YT:
             return f'Done with: {vidTitle}\n'
         except socket.timeout:
             print(f'{vidID} timeout, restarting...')
-            return self._insert(vidID)
+            return self.pls_insert(vidID)
         except:
             self.save_log()
             return f'Error in:  {vidID}\n'
