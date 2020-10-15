@@ -22,13 +22,6 @@ import yt_api
 import pickle
 import threading
 import webbrowser
-import cProfile, pstats, io
-from pstats import SortKey
-
-Cprof = 0
-if Cprof:
-    pr = cProfile.Profile()
-    pr.enable()
 
 if not os.path.exists('cached'):
     os.makedirs('cached')
@@ -606,13 +599,6 @@ main_window.show()
 getTime('MainWindow.show()')
 main_window.on_load()
 getTime('main_window.on_load()')
-if Cprof:
-    pr.disable()
-    s = io.StringIO()
-    sortby = SortKey.CUMULATIVE
-    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-    ps.print_stats()
-    print(s.getvalue())
 app.exec_()
 
 if THUMBNAILS_OLD != THUMBNAILS:
