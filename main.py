@@ -1,4 +1,19 @@
 # -*- coding: utf-8 -*-
+
+TODO = '''
+multiprocessing
+
+dublicates in music
+
+reuse likes
+
+check if removed in music
+
+checkbox -> icons
+(likes = likesicons
+other trashcan)
+'''
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 import os
 import sys
@@ -7,27 +22,103 @@ import yt_api
 import pickle
 import threading
 import webbrowser
+import cProfile, pstats, io
+from pstats import SortKey
+
+Cprof = 0
+if Cprof:
+    pr = cProfile.Profile()
+    pr.enable()
 
 if not os.path.exists('cached'):
     os.makedirs('cached')
 
-TODO = '''
-checkbox -> icons
-(likes = likesicons
-other trashcan)
-'''
+for file_name in ('Errors', 'Ignored', 'Likes', 'Music', 'Likes_Deleted'):
+    file_name = f'_{file_name}.txt'
+    try:
+        open(file_name, 'r').close()
+    except:
+        open(file_name, 'w').close()
 
 st = time.time()
-
-current_insert = dict()
 
 def getTime(txt):
     t = time.time() - st
     t = round(t, 2)
     print(t, txt)
 
+current_insert = dict()
+
 def make_details():
     return '\n'.join(f'{status:<10}| {title[:40]}' for title, status in current_insert.items())
+
+class AddTabContents(QtCore.QThread):
+    done_AddTabContents = QtCore.pyqtSignal(QtWidgets.QWidget)
+    vids = []
+    sizeTitle = QtCore.QSize(300, 180)
+    sizeThumbnail = QtCore.QSize(320, 180)
+    #sizeThumbnail = 
+    def __init__(self, tabName, IDs=[]):
+        super.__init__()
+        self.tabName = tabName
+        self.width = width
+        self.height = height
+        #self.IDs = getattr(main_window, 
+        
+    def run(self):
+        def add_Vid(row, col, vidID):
+            def add_thumbnail():
+                _ThumbnailName = f'{tabName}_Thumbnail_{row}_{col}'
+                _Thumbnail = QtWidgets.QLabel(
+                    objectName=vidID,
+                    minimumSize=self.sizeThumbnail,
+                    maximumSize=self.sizeThumbnail,
+                    #pixmap=main_window.defaultPixmap
+                )
+                _Thumbnail.installEventFilter(self)
+                #setattr(self, _ThumbnailName, _Thumbnail)
+                vid['thumb'] = _Thumbnail
+                _scrollAreaContents_Grid.addWidget(_Thumbnail, row*2, col*2, 1, 2)
+
+            def add_title():
+                _TitleName = f'{tabName}_Label_{row}_{col}'
+                _Title = QtWidgets.QLabel(
+                    minimumSize=self.sizeTitle,
+                    maximumSize=self.sizeTitle,
+                    font=self.fontTitle)
+                #setattr(self, _TitleName, _Title)
+                vid['title'] = _Title
+                _scrollAreaContents_Grid.addWidget(_Title, row*2+1, col*2, 1, 1)
+                
+            def add_checkBox():
+                _checkBoxName = f'{tabName}_checkBox_{row}_{col}'
+                _checkBox = QtWidgets.QCheckBox(
+                    objectName=_checkBoxName,
+                    toolTip="Uncheck to remove",
+                    toolTipDuration=2000,
+                    checked=True)
+                #setattr(self, _checkBoxName, _checkBox)
+                vid['checkbox'] = _checkBox
+                _scrollAreaContents_Grid.addWidget(_checkBox, row*2+1, col*2+1, 1, 1)
+            vid = dict()
+            add_thumbnail()
+            add_title()
+            add_checkBox()
+            self.vids.append(vid)
+        
+        def add_row(cols):
+            for col in range(cols):
+                vidID = tmpIDs[row * self.MAX_COLLUMNS + col]
+                add_Vid(row, col, vidID)
+       
+        _scrollAreaContents = QtWidgets.QWidget()
+        _scrollAreaContents.setGeometry(QtCore.QRect(0, 0, self.width, self.height))
+        _scrollAreaContents_Grid = QtWidgets.QGridLayout(_scrollAreaContents)
+        _scrollAreaContents_Grid.setSpacing(self.SPACING)
+        _scrollAreaContents_Grid.setContentsMargins(0, 0, 0, 0)
+        for x in range(5):
+            _scrollAreaContents_Grid.setColumnStretch(x*2, 1)
+        done_AddTabContents.emit(_scrollAreaContents)
 
 
 class UpdateStatus(QtCore.QThread):
@@ -42,59 +133,63 @@ class UpdateStatus(QtCore.QThread):
         self.updated.emit(make_details())
     
     def run(self):
-        global main_window
         self.setStatus('Inserting')
         st = main_window.youtube.pls_insert(self.vidID)
         self.setStatus('Done')
 
 
 class FetchThumbnail(QtCore.QThread):
-    thumbnail_loaded = QtCore.pyqtSignal(list)
+    #thumbnail_loaded = QtCore.pyqtSignal(list)
     NameLen = 150
-    def __init__(self, vidID, row, col, tabName):
-        QtWidgets.QMainWindow.__init__(self)
-        self.vidID = vidID
-        self._emit = [vidID, row, col, tabName]
-    
+    def __init__(self, vid):
+        super().__init__()
+        self.vidID, self.THUMBNAIL, self.TITLE = vid
+        
     def run(self):
         vidTitle, vidThumbnail = self.get_thumbnail()
-        if vidTitle:
-            vidTitle = vidTitle.decode()
-        else:
+        if not vidTitle:
             vidTitle, vidThumbnail = self.vidID, False
-        self._emit.append(vidTitle)
-        self._emit.append(vidThumbnail)
-        self.thumbnail_loaded.emit(self._emit)
-        
+        self.TITLE.setText(vidTitle)
+        if vidThumbnail:
+            pixmap = QtGui.QPixmap()
+            pixmap.loadFromData(vidThumbnail)
+            self.THUMBNAIL.setPixmap(pixmap)
+            THUMBNAILS[self.vidID] = (vidTitle, vidThumbnail)
+        else:
+            self.THUMBNAIL.setPixmap(main_window.defaultPixmap)
+        #self._emit.append(vidTitle)
+        #self._emit.append(vidThumbnail)
+        #self.thumbnail_loaded.emit(self._emit)
+    
     def get_thumbnail(self):
+        cached_thumbnail = THUMBNAILS.get(self.vidID)
+        if cached_thumbnail:
+            return cached_thumbnail
         try:
             with open(f'cached/{self.vidID}', 'rb') as f:
                 f = f.read()
-            return f[:self.NameLen], f[self.NameLen:]
+            return f[:self.NameLen].decode(), f[self.NameLen:]
         except FileNotFoundError:
-            return main_window.youtube.get_thumbnail(self.vidID, save=1)
+            #if no cache, wait for yt api and download thumbnail
+            while 1:
+                try:
+                    return main_window.youtube.get_thumbnail(self.vidID, save=1)
+                except AttributeError:
+                    pass
 
 
 class MainWindow(QtWidgets.QMainWindow):
     if 1:   #convenience to hide all class variables
-        thumbnail_W = 320
-        thumbnail_H = 180
-        title_H = 23
-        sizeDel = QtCore.QSize(40, title_H)
-        sizeChkBx = QtCore.QSize(16, title_H)
-        sizeTitle = QtCore.QSize(300, title_H)
-        sizeThumbnail = QtCore.QSize(thumbnail_W, thumbnail_H)
-        bold = QtGui.QFont.Bold
-        famAnonymous = "Anonymous Pro"
-        famSitka = "Sitka"
-        famTahoma = "Tahoma"
-        famUbuntu = "Ubuntu"
-        famSegoe = "Segoe UI Black"
-        famCalibri = "Calibri"
-        famLucida = "Lucida Console"
-        fontMsgBox = QtGui.QFont(famLucida)
-        fontTitle = QtGui.QFont(famCalibri, 15)
-        fontDel = QtGui.QFont(famSegoe, 14, bold)
+        THUMBNAIL_W = 320
+        THUMBNAIL_H = 180
+        TITLE_H = 23
+        sizeDel = QtCore.QSize(40, TITLE_H)
+        sizeChkBx = QtCore.QSize(16, TITLE_H)
+        sizeTitle = QtCore.QSize(300, TITLE_H)
+        sizeThumbnail = QtCore.QSize(THUMBNAIL_W, THUMBNAIL_H)
+        fontMsgBox = QtGui.QFont("Lucida Console")
+        fontTitle = QtGui.QFont("Calibri", 15)
+        #fontDel = QtGui.QFont("Segoe UI Black", 14, QtGui.QFont.Bold)
 
         update = 0
         NewIDs = []
@@ -102,13 +197,6 @@ class MainWindow(QtWidgets.QMainWindow):
         MusicIDs = []
         ErrorsIDs = set()
         IgnoredIDs = []
-        
-        LastModified = {
-            'Music' : 0,
-            'Likes' : 0,
-            'Errors' : 0,
-            'Ignored' : 0
-        }
         
         actionsList = [
             'Reconnect API',
@@ -123,6 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
             '',
             'Exit App',
         ]
+        
         menuChangeDict = {
             'enable' : 0,
             'actionNames' : []
@@ -134,170 +223,34 @@ class MainWindow(QtWidgets.QMainWindow):
         menubarH = tabbarH = 21
         statusbarH = 29
         scrollbarW = 17
-    
-    def __init__(self):
-        #Depending on user's monitor resolution adjusts W, H and grid of app
-        super().__init__()
-        display = QtWidgets.QApplication.desktop().screenGeometry()
-        self.MAX_COLLUMNS = (display.width()-self.scrollbarW-4) // (self.thumbnail_W + self.SPACING)
-        usable_height = display.height() - self.menubarH - self.tabbarH - self.statusbarH - 30
-        vid_height = self.thumbnail_H + self.title_H + self.SPACING*2
-        self.MAX_ROWS = usable_height // vid_height
-        self.width = self.MAX_COLLUMNS * (self.thumbnail_W + self.SPACING) - self.SPACING
-        self.height = self.MAX_ROWS * (self.thumbnail_H + self.title_H + self.SPACING*2)
-        self.defaultPixmap = QtGui.QPixmap("default.png")
-
-    def add_Tab(self, tabName):
-        def add_Vid(row, col, vidID):
-            def add_thumbnail():
-                _ThumbnailName = f'{tabName}Thumbnail{row}_{col}'
-                _Thumbnail = QtWidgets.QLabel(
-                    objectName=vidID,
-                    minimumSize=self.sizeThumbnail,
-                    maximumSize=self.sizeThumbnail,
-                    pixmap=qpxmp
-                )
-                _Thumbnail.installEventFilter(self)
-                setattr(self, _ThumbnailName, _Thumbnail)
-                _scrollAreaContents_Grid.addWidget(_Thumbnail, row*2, col*2, 1, 2)
-
-            def add_title():
-                _TitleName = f'{tabName}Label{row}_{col}'
-                _Title = QtWidgets.QLabel(
-                    minimumSize=self.sizeTitle,
-                    maximumSize=self.sizeTitle,
-                    font=self.fontTitle,
-                    text=vidTitle
-                )
-                setattr(self, _TitleName, _Title)
-                _scrollAreaContents_Grid.addWidget(_Title, row*2+1, col*2, 1, 1)
-                
-            def add_checkBox():
-                _checkBoxName = f'{tabName}_checkBox_{row}_{col}'
-                _checkBox = QtWidgets.QCheckBox(
-                    objectName=_checkBoxName,
-                    minimumSize=self.sizeChkBx,
-                    maximumSize=self.sizeChkBx,
-                    toolTip="Uncheck to remove",
-                    toolTipDuration=2000,
-                    checked=True,
-                )
-                #_checkBox.setStyleSheet("QCheckBox.indicator {width:16px;height: 16px;}");
-                setattr(self, _checkBoxName, _checkBox)
-                _scrollAreaContents_Grid.addWidget(_checkBox, row*2+1, col*2+1, 1, 1)
-            
-            def add_del_button(): #not used
-                _ButtonName = f'{tabName}_Button_{row}_{col}'
-                _Button = QtWidgets.QPushButton(
-                    objectName=_ButtonName,
-                    minimumSize=self.sizeDel,
-                    maximumSize=self.sizeDel,
-                    font=self.fontDel,
-                    text="X"
-                )
-                setattr(self, _ButtonName, _Button)
-                _Button.clicked.connect(self.butPress)
-                _scrollAreaContents_Grid.addWidget(_Button, row*2+1, col*2+1, 1, 1)
-            
-            thumbnail = THUMBNAILS.get(vidID)
-            if thumbnail and thumbnail[1]:
-                vidTitle, vidThumbnail = THUMBNAILS[vidID]
-                qpxmp = QtGui.QPixmap()
-                qpxmp.loadFromData(vidThumbnail)
-            else:
-                vidTitle = vidID
-                qpxmp = self.defaultPixmap
-            
-            add_thumbnail()
-            add_title()
-            add_checkBox()
-            
-            return thumbnail
-        
-        _Tab_Name = f'{tabName}_Tab'
-        _Tab_scrollArea_Name = f'{tabName}_Tab_scrollArea'
-        
-        tmpIDs = getattr(self, f'{tabName}IDs')
-        
-        tabExists = _Tab_Name in self.__dict__
-        if tabExists:
-            _Tab = getattr(self, _Tab_Name)
-            _Tab_scrollArea = getattr(self, _Tab_scrollArea_Name)
-        else:
-            _Tab = QtWidgets.QWidget()
-            setattr(self, _Tab_Name, _Tab)
-            _Tab_scrollArea = QtWidgets.QScrollArea(_Tab)
-            _Tab_scrollArea.setGeometry(QtCore.QRect(0, 0, self.width+self.scrollbarW+2, self.height+2))
-            setattr(self, _Tab_scrollArea_Name, _Tab_scrollArea)
-        
-        
-        rows, col_last_row = divmod(len(tmpIDs), self.MAX_COLLUMNS)
-        __H = (self.thumbnail_H + self.title_H + self.SPACING*2)*(rows+bool(col_last_row))
-        _scrollAreaContents = QtWidgets.QWidget()
-        _scrollAreaContents.setGeometry(QtCore.QRect(0, 0, self.width, __H))
-        _scrollAreaContents.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
-        _scrollAreaContents_Grid = QtWidgets.QGridLayout(_scrollAreaContents)
-        for x in range(5):
-            _scrollAreaContents_Grid.setColumnStretch(x*2, 1)
-        _scrollAreaContents_Grid.setSpacing(self.SPACING)
-        _scrollAreaContents_Grid.setContentsMargins(0, 0, 0, 0)
-
-
-        #setattr(self, _scrollAreaContents_Name, _scrollAreaContents)
-        #setattr(self, _scrollAreaContents_Grid_Name, _scrollAreaContents_Grid)
-        
-        def add_row(cols):
-            for col in range(cols):
-                vidID = tmpIDs[row * self.MAX_COLLUMNS + col]
-                thumbnail = add_Vid(row, col, vidID)
-                if not thumbnail:
-                    _Thread = FetchThumbnail(vidID, row, col, tabName)
-                    _Thread.thumbnail_loaded.connect(self.got_thumb)
-                    setattr(self, f'{tabName}_{vidID}_Thread', _Thread)
-                    _Thread.start()
-        
-        row = -1
-        for row in range(rows):
-            add_row(self.MAX_COLLUMNS)
-        row += 1
-        add_row(col_last_row)
-        
-        _Tab_scrollArea.setWidget(_scrollAreaContents)
-        
-        if not tabExists:
-            self.tabWidget.addTab(_Tab, tabName)
-    
-        QtWidgets.QApplication.processEvents()
-    
-    def got_thumb(self, raw_thumb):
-        vidID, row, col, tabName, vidTitle, vidThumbnail = raw_thumb
-        #while 1:
-        try:
-            _Title = getattr(self, f'{tabName}Label{row}_{col}')
-            _Title.setText(vidTitle)
-            if vidThumbnail:
-                pixmap = QtGui.QPixmap()
-                pixmap.loadFromData(vidThumbnail)
-                _Thumbnail = getattr(self, f'{tabName}Thumbnail{row}_{col}')
-                _Thumbnail.setPixmap(pixmap)
-            
-                THUMBNAILS[vidID] = (vidTitle, vidThumbnail)
-            #break
-        except RuntimeError:
-            pass
+        thumbnails_list = []
+        TABS = dict()
     
     def setupUi(self):
-        self.setWindowTitle("From likes to music playlist")
+        self.setWindowTitle("Likes to Music")
+        self.setWindowIcon(QtGui.QIcon('logo.ico'))
+        
+        display = QtWidgets.QApplication.desktop().screenGeometry()
+        
+        self.MAX_COLLUMNS = (display.width()-self.scrollbarW-4) // (self.THUMBNAIL_W + self.SPACING)
+        self.width = self.MAX_COLLUMNS * (self.THUMBNAIL_W + self.SPACING) - self.SPACING
+        
+        usable_height = display.height() - self.menubarH - self.tabbarH - self.statusbarH - 30
+        vid_height = self.THUMBNAIL_H + self.TITLE_H + self.SPACING*2
+        max_rows = usable_height // vid_height
+        self.height = max_rows * (self.THUMBNAIL_H + self.TITLE_H + self.SPACING*2)
+        
         self.setFixedSize(
-            self.width + self.scrollbarW + 6, 
-            self.height + self.statusbarH + self.tabbarH + self.menubarH + 6)
+            6 + self.scrollbarW + self.width, 
+            6 + self.statusbarH + self.height + self.tabbarH + self.menubarH)
+        
+        self.defaultPixmap = QtGui.QPixmap("default.png")
         
         self.MainwWindow_CentralWidget = QtWidgets.QWidget(self)
         
         self.menubar = QtWidgets.QMenuBar(self)
         self.menuStart = QtWidgets.QMenu(self.menubar, title="Menu")
         self.setMenuBar(self.menubar)
-        
         for actionName in self.actionsList:
             if not actionName:
                 self.menuStart.addSeparator()
@@ -311,8 +264,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 action.setEnabled(False)
             action.triggered.connect(actionFunc)
             self.menuStart.addAction(action)
-        
-        
         self.menubar.addAction(self.menuStart.menuAction())
         
         self.statusbar = QtWidgets.QStatusBar(
@@ -325,11 +276,88 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabWidget.setGeometry(QtCore.QRect(0, 0, self.width+self.scrollbarW+8, self.height+self.tabbarH+7))
         self.tabWidget.currentChanged.connect(self.tabChanged)
         self.setCentralWidget(self.MainwWindow_CentralWidget)
-        QtWidgets.QApplication.processEvents()
-        QtCore.QMetaObject.connectSlotsByName(self)
-
-    #def check_API_state(self):
-    #    return ('YouTube API IS UNAVAILABLE!', 'YouTube API Connected!')[bool(self.youtube.youtube)]
+        
+        for tabName in ('Likes', 'Music', 'New', 'Ignored'):
+            _Tab = QtWidgets.QWidget()
+            self.tabWidget.addTab(_Tab, tabName)
+            _Tab_scrollArea = QtWidgets.QScrollArea(_Tab)
+            _Tab_scrollArea.setGeometry(QtCore.QRect(0, 0, self.width+self.scrollbarW+2, self.height+2))
+            
+            tab_dict = {
+                'tab' : _Tab,
+                'tab_scrollArea' : _Tab_scrollArea,
+                'IDs' : []
+            }
+            self.TABS[tabName] = tab_dict
+        
+    def add_Tab(self, tabName):
+        def add_Vid(row, col, vidID):
+            def add_del_button(): #not used
+                _ButtonName = f'{tabName}_Button_{row}_{col}'
+                _Button = QtWidgets.QPushButton(
+                    objectName=_ButtonName,
+                    minimumSize=self.sizeDel,
+                    maximumSize=self.sizeDel,
+                    font=self.fontDel,
+                    text="X"
+                )
+                setattr(self, _ButtonName, _Button)
+                _Button.clicked.connect(self.butPress)
+                _scrollAreaContents_Grid.addWidget(_Button, row*2+1, col*2+1, 1, 1)
+            
+            _ThumbnailName = f'{tabName}_Thumbnail_{row}_{col}'
+            self._Thumbnail = QtWidgets.QLabel(
+                objectName=vidID,
+                minimumSize=self.sizeThumbnail,
+                maximumSize=self.sizeThumbnail)
+            self._Thumbnail.installEventFilter(self)
+            setattr(self, _ThumbnailName, self._Thumbnail)
+            _scrollAreaContents_Grid.addWidget(self._Thumbnail, row*2, col*2, 1, 2)
+            
+            _TitleName = f'{tabName}_Label_{row}_{col}'
+            self._Title = QtWidgets.QLabel(
+                minimumSize=self.sizeTitle,
+                maximumSize=self.sizeTitle,
+                font=self.fontTitle)
+            setattr(self, _TitleName, self._Title)
+            _scrollAreaContents_Grid.addWidget(self._Title, row*2+1, col*2, 1, 1)
+            
+            _checkBoxName = f'{tabName}_checkBox_{row}_{col}'
+            _checkBox = QtWidgets.QCheckBox(
+                objectName=_checkBoxName,
+                toolTip="Uncheck to remove",
+                toolTipDuration=2000,
+                checked=True)
+            setattr(self, _checkBoxName, _checkBox)
+            _scrollAreaContents_Grid.addWidget(_checkBox, row*2+1, col*2+1, 1, 1)
+        
+        _Tab = self.TABS[tabName]['tab']
+        _Tab_scrollArea = self.TABS[tabName]['tab_scrollArea']
+        
+        tmpIDs = getattr(self, f'{tabName}IDs')
+        _scrollAreaContents = QtWidgets.QWidget()
+        _scrollAreaContents_Grid = QtWidgets.QGridLayout(_scrollAreaContents)
+        _scrollAreaContents_Grid.setSpacing(self.SPACING)
+        _scrollAreaContents_Grid.setContentsMargins(0, 0, 0, 0)
+        for x in range(4):
+            _scrollAreaContents_Grid.setColumnStretch(x*2, 1)
+        
+        def add_row(cols):
+            for col in range(cols):
+                vidID = tmpIDs[row * self.MAX_COLLUMNS + col]
+                add_Vid(row, col, vidID)
+                _Thread = FetchThumbnail([vidID, self._Thumbnail, self._Title])
+                setattr(self, f'{tabName}_{vidID}_Thread', _Thread)
+                _Thread.start()
+        
+        rows, col_last_row = divmod(len(tmpIDs), self.MAX_COLLUMNS)
+        row = -1
+        for row in range(rows):
+            add_row(self.MAX_COLLUMNS)
+        row += 1
+        add_row(col_last_row)
+        
+        _Tab_scrollArea.setWidget(_scrollAreaContents)
     
     def connect_yt_api(self):
         self.youtube = yt_api.YT()
@@ -345,6 +373,7 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             self.menuChange()
         getTime('connect_yt_api:')
+        self.tabChanged()
 
     def Reconnect_API(self):
         self.youtube.youtube = self.youtube.main_auth_full()
@@ -359,17 +388,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tabChanged()
 
     def on_load(self):
-        def len_likes():
-            with open('_Likes.txt', 'r') as f:
-                return len(f.readlines()) 
-        if all(os.path.exists(f'_{name}.txt') for name in ('Likes', 'Music', 'Ignored')) and \
-            len(os.listdir('cached')) >= len_likes():
-            threading.Thread(target=self.connect_yt_api).start()
-        else:
-            self.connect_yt_api()
+        threading.Thread(target=self.connect_yt_api).start()
+        self.fetch_playlist('Ignored')
         self.fetch_playlist('Likes')
         self.fetch_playlist('Music')
-        self.fetch_playlist('Ignored')
         self.update = 1
 
     def menuChange(self):
@@ -430,6 +452,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 with open('_Likes_Deleted.txt', 'a+') as f:
                     t = set(Likes_old) - set(tmpIDs)
                     f.write('\n'.join(t))
+                    f.write('\n')
             with open(f'_{tabName}.txt', 'w') as f:
                 f.write('\n'.join(tmpIDs))
         else:
@@ -457,18 +480,17 @@ class MainWindow(QtWidgets.QMainWindow):
     def get_chkbox_state(self, tabName):
         _checkedBoxes = []
         _uncheckedBoxes = []
-        #vidIDs = self.__dict__[f'{tabName}IDs']
         vidIDs = getattr(self, f'{tabName}IDs')
         for n, vidID in enumerate(vidIDs):
             row, col = divmod(n, self.MAX_COLLUMNS)
             checkBoxName = f'{tabName}_checkBox_{row}_{col}'
-            #_checkBox = self.__dict__[checkBoxName]
             _checkBox = getattr(self, checkBoxName)
             if _checkBox.isChecked():
                 _checkedBoxes.append(vidID)
             else:
                 _uncheckedBoxes.append(vidID)
-        return _checkedBoxes, _uncheckedBoxes
+        self.checkedBoxes = _checkedBoxes
+        self.uncheckedBoxes = _uncheckedBoxes
 
     def MusicApiCooldown(self):
         self.tabWidget.setCurrentIndex(1)
@@ -493,9 +515,11 @@ class MainWindow(QtWidgets.QMainWindow):
         
         if not getattr(self, 'NewIDs'):
             return
-        new_checkedBoxes, new_uncheckedBoxes = self.get_chkbox_state('New')
         
-        insert_titles = [(THUMBNAILS[ID][0], ID) for ID in new_checkedBoxes]
+        self.get_chkbox_state('New')
+        #new_checkedBoxes, new_uncheckedBoxes = self.get_chkbox_state('New')
+        
+        insert_titles = [(THUMBNAILS[ID][0], ID) for ID in self.checkedBoxes]
         current_insert = {title:'Pending' for title, _ in insert_titles}
         
         self.gen_titles = (vid for vid in insert_titles)
@@ -515,12 +539,6 @@ class MainWindow(QtWidgets.QMainWindow):
             
         msg.exec_()
         
-        self.MusicIDs = new_checkedBoxes + self.MusicIDs
-        self.MusicApiCooldown()
-        with open('_Ignored.txt', 'w') as f:
-            f.write('\n'.join(new_uncheckedBoxes + self.IgnoredIDs))
-        self.fetch_playlist('Ignored')
-        
     def start_insert(self):
         self.sender().setEnabled(False)
         self.on_finished()
@@ -529,7 +547,13 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             self.next_insert(next(self.gen_titles))
         except StopIteration:
+            #print('kekw')
             self.update_details(f'{make_details()}\nFinished!')
+            self.MusicIDs = self.checkedBoxes + self.MusicIDs
+            self.MusicApiCooldown()
+            with open('_Ignored.txt', 'w') as f:
+                f.write('\n'.join(self.uncheckedBoxes + self.IgnoredIDs))
+            self.fetch_playlist('Ignored')
 
     def next_insert(self, vid):
         self.thread = UpdateStatus(vid)
@@ -541,8 +565,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.msg.setDetailedText(text)
 
     def Delete_From_Music(self):
-        music_uncheckedBoxes = self.get_chkbox_state('Music')[1]
-        for vidID in music_uncheckedBoxes:
+        self.get_chkbox_state('Music')
+        for vidID in self.uncheckedBoxes:
             self.MusicIDs.remove(vidID)
             vid = self.MusicContents[vidID]
             vidTitle = vid['vidTitle']
@@ -553,32 +577,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.MusicApiCooldown()
 
     def Delete_From_Ignored(self):
-        ignored_uncheckedBoxes = self.get_chkbox_state('Ignored')[1]
-        if ignored_uncheckedBoxes:
-            for rem in ignored_uncheckedBoxes:
-                self.IgnoredIDs.remove(rem)
+        self.get_chkbox_state('Ignored')
+        if self.uncheckedBoxes:
+            for vidID in self.uncheckedBoxes:
+                self.IgnoredIDs.remove(vidID)
             with open('_Ignored.txt', 'w') as f:
                 f.write('\n'.join(self.IgnoredIDs))
             self.fetch_playlist('Ignored')
 
     def Exit_App(self):
-        sys.exit(0)
+        sys.exit()
 
 
-if __name__ == "__main__":
+if 1:
     try:
         with open('thumbnails.pickle', 'rb') as fl:
             THUMBNAILS = pickle.load(fl)
     except FileNotFoundError:
         THUMBNAILS = dict()
-    THUMBNAILS_OLD = dict(THUMBNAILS)
-    app = QtWidgets.QApplication(sys.argv)
-    main_window = MainWindow()
-    main_window.setupUi()
-    main_window.show()
-    getTime('MainWindow.show()')
-    main_window.on_load()
-    app.exec_()
-    if THUMBNAILS_OLD != THUMBNAILS:
-        with open('thumbnails.pickle', 'wb') as fl:
-            pickle.dump(THUMBNAILS, fl)
+else:
+    THUMBNAILS = dict()
+
+THUMBNAILS_OLD = dict(THUMBNAILS)
+app = QtWidgets.QApplication(sys.argv)
+main_window = MainWindow()
+main_window.setupUi()
+main_window.show()
+getTime('MainWindow.show()')
+main_window.on_load()
+getTime('main_window.on_load()')
+if Cprof:
+    pr.disable()
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
+app.exec_()
+
+if THUMBNAILS_OLD != THUMBNAILS:
+    with open('thumbnails.pickle', 'wb') as fl:
+        pickle.dump(THUMBNAILS, fl)
