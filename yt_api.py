@@ -1,6 +1,4 @@
-import os
 import re
-import sys
 import time
 import html
 import json
@@ -8,24 +6,18 @@ import pickle
 import requests
 import traceback
 import googleapiclient.errors
-
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-#os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "0"
+
+NAMELEN = 150
+
 class YT:
     api_service_name = "youtube"
     api_version = "v3"
     
-    def __init__(self, auth='full'):
-        with open('credits','r') as f:
-            c = json.loads(f.read())
-        self.DEVELOPER_KEY = c['DEVELOPER_KEY']
-        self.playlists = {'Music':c['MusicPlsID'], 'Likes':c['LikesPlsID']}
-        if auth == 'full':
-            self.youtube = self.main_auth_full()
-        else:
-            self.youtube = self.main_auth_readonly()
+    def __init__(self):
+        self.youtube = self.main_auth_full()
 
     def auth_valid(self):
         try:
@@ -35,12 +27,14 @@ class YT:
         return False
 
     def main_auth_full(self):
-        # The file token.pickle stores the user's access and refresh tokens, and is created 
+        # The pickle file stores the user's access and refresh tokens, and is created 
         # automatically when the authorization flow completes for the first time.
         creds = None
-        if os.path.exists('yt_auth_full.pickle'):
+        try:
             with open('yt_auth_full.pickle', 'rb') as fl:
                 creds = pickle.load(fl)
+        except:
+            pass
         # If there are no (valid) credentials available, let the user log in.
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -57,25 +51,78 @@ class YT:
             b = build(self.api_service_name, self.api_version, credentials=creds)
             self.creds = creds
             return b
-        except googleapiclient.errors.UnknownApiNameOrVersion:
-            print('ERROR! YOUTUBE API IS UNAVAILABLE!')
+        except:
             self.save_log()
             return
-
-
-    def main_auth_readonly(self):
-        return build(self.api_service_name, self.api_version, developerKey=self.DEVELOPER_KEY)
-
 
     def save_log(self):
         #if error save to file
         t = time.strftime('%Y-%m-%d@%H-%M-%S', time.gmtime())
         pth = f'Logs/{t}.txt'
-        print(f'Log saved as: {pth}')
         with open(pth, 'w') as f:
-            f.write(traceback.format_exc() + '\nArguments:\n' + str(sys.argv))
+            f.write(traceback.format_exc())# + '\nArguments:\n' + str(sys.argv))
 
+    def get_thumbnail(self, vidID):
+        url = f'https://i.ytimg.com/vi/{vidID}/mqdefault.jpg'
+        return requests.get(url).content
+    
+    def del_video(self, vidPlsID):
+        self.youtube.playlistItems().delete(id=vidPlsID).execute()
 
+    def pls_insert(self, vidID, playlistID, pos=0):
+        if len(vidID) != 11:
+            return f'Wrong vidID length: {vidID}'
+        b = {
+            "snippet": {
+                "position": pos,
+                "playlistId": playlistID,
+                "resourceId": {
+                    "kind": "youtube#video",
+                    "videoId": vidID
+                }
+            }
+        }
+        request = self.youtube.playlistItems().insert(
+            part="snippet",
+            fields="snippet/title",
+            body=b
+        )
+        return request.execute()["snippet"]["title"]
+
+    def playlist_generator(self, playlistID):
+        pT = ''
+        while 1:
+            request = self.youtube.playlistItems().list(
+                part="snippet",
+                maxResults=50,
+                pageToken=pT,
+                playlistId=playlistID,
+                fields="nextPageToken, items(id, snippet(title, resourceId/videoId))"
+            )
+            pls_videos = request.execute()
+            yield pls_videos['items']
+            pT = pls_videos.get('nextPageToken')
+            if not pT:
+                break
+
+    def playlistContents(self, playlistID):
+        '''
+        tmpVideos = ...
+            ID of video: {
+                vidTitle: Title,
+                vidIDPls: [IDs in playlist]
+            }...
+        '''
+        tmpVideos = {}
+        for page in self.playlist_generator(playlistID):
+            for video in page:
+                vidID = video['snippet']['resourceId']['videoId']
+                vidIDPls = video['id']
+                vidTitle = video['snippet']['title']
+                tmpVideos.setdefault(vidID, {'vidTitle': vidTitle}) \
+                    .setdefault('vidIDPls', []).append(vidIDPls)
+        return tmpVideos
+    
     def get_title_api(self, vidID):
         #get video title, if error = removed
         request = self.youtube.videos().list(
@@ -87,117 +134,26 @@ class YT:
             title = request.execute()
             return title["items"][0]["snippet"]["title"]
         except IndexError:
-            #with open('_Errors.txt', 'r') as f:
-            #    errorIDs = f.read().splitlines()
-            #if vidID not in errorIDs:
-            #    errorIDs.append(vidID)
             print(f'{vidID} IS PRIVATE OR NO LONGER EXISTS!')
-            with open('_Errors.txt', 'a+') as f:
-                f.write(f'\n{vidID}')
-            return 
-        except:
-            self.save_log()
+            return vidID
     
     def get_title_requests(self, vidID):
         vid_raw = requests.get(f'https://www.youtube.com/watch?v={vidID}').text
         _search = re.search('alternate.*?title="(?P<title>.+?)"', vid_raw)
         try:
-            return _search['title']
+            t = _search['title']
+            return html.unescape(t)
         except TypeError:
             return vidID
-            #print(f'{vidID} IS PRIVATE OR NO LONGER EXISTS!')
-
-
-    def get_thumbnail(self, vidID, save=1):
-        while 1:
-            try:
-                img = requests.get(f'https://i.ytimg.com/vi/{vidID}/mqdefault.jpg', timeout=10).content
-                break
-            except requests.exceptions.Timeout:
-                print(f'{vidID} thumbnail download timed out. Retry...')
-            except requests.exceptions.ConnectionError:
-                print(f'{vidID} thumbnail download timed out. Retry...')
-        if save:
-            return self.save_name_with_thumbnail(vidID, img)
-        return '', img
     
-    
-    def save_name_with_thumbnail(self, vidID, img, maxNameLen=150):
-        vidTitle = self.get_title_requests(vidID)
-        vidTitle = html.unescape(vidTitle)
+    def encode_title(self, vidTitle):
         vidTitle = vidTitle.encode()
-        vidTitle = vidTitle[:maxNameLen]
-        vidTitle = vidTitle.ljust(maxNameLen)
+        vidTitle = vidTitle[:NAMELEN]
+        return vidTitle.ljust(NAMELEN)
+    
+    def save_thumbnail_w_name(self, img, vidID, vidTitle=''):
+        if not vidTitle:
+            vidTitle = self.get_title_requests(vidID)
         with open(f'cached/{vidID}', 'wb') as f:
-            f.write(vidTitle + img)
-        return vidTitle, img
-    
-    
-    def del_video(self, vidPlsID):
-        self.youtube.playlistItems().delete(id=vidPlsID).execute()
-
-
-    def pls_insert(self, vidID):
-        playlistID = self.playlists['Music']
-        if len(vidID) != 11:
-            return f'Wrong vidID length: {vidID}'
-        try:
-            request = self.youtube.playlistItems().insert(
-                part="snippet",
-                fields="snippet/title",
-                body={
-                    "snippet": {
-                        "position": 0,
-                        "playlistId": playlistID,
-                        "resourceId": {
-                            "kind": "youtube#video",
-                            "videoId": vidID
-                        }
-                    }
-                }
-            )
-            vidTitle = request.execute()["snippet"]["title"]
-            return f'Done with: {vidTitle}\n'
-        except socket.timeout:
-            print(f'{vidID} timeout, restarting...')
-            return self.pls_insert(vidID)
-        except:
-            self.save_log()
-            return f'Error in:  {vidID}\n'
-
-
-    def playlistContents(self, playlistName, getFull=1):
-        '''
-        tmpVideos = ID of video: {
-            vidTitle: Title,
-            vidIDPls: [IDs in playlist]
-        }
-        '''
-        playlistID = self.playlists[playlistName]
-        tmpVideos = dict()
-        pT = ''
-        while 1:
-            request = self.youtube.playlistItems().list(
-                part="snippet",
-                maxResults=50,
-                pageToken=pT,
-                playlistId=playlistID,
-                fields="pageInfo/totalResults, nextPageToken, items(id, snippet(title, resourceId/videoId))"
-            )
-            pls_videos = request.execute()
-            pT = pls_videos.get('nextPageToken')
-            for video in pls_videos['items']: 
-                vidID = video['snippet']['resourceId']['videoId']
-                vidTitle = video['snippet']['title']
-                tmp = tmpVideos.get(vidID, {'vidTitle':vidTitle, 'vidIDPls':[]})['vidIDPls']
-                #tmp = tmpVideos.get(vidID, {'vidIDPls':[]})['vidIDPls']
-                tmp.append(video['id'])
-                tmpVideos[vidID] = {'vidTitle':vidTitle, 'vidIDPls':tmp}
-            
-            if not pT or not getFull:
-                break
-        pls_len = pls_videos['pageInfo']['totalResults']
-        #print('Done.')
-        print(f'{playlistName} playlist reported length: {pls_len}')
-        print(f'{playlistName} playlist  actual  length: {len(tmpVideos)}')
-        return tmpVideos
+            f.write(self.encode_title(vidTitle) + img)
+        return vidTitle
