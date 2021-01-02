@@ -11,7 +11,7 @@
 - APIs & Services -> Add youtube data
 - APIs & Services -> Credentails, Add oauth and api key
 - Download secret file, rename it to client_secret.json
-- Create new YpuTube playlist to store all music and put its ID into PUT_PLAYLIST_ID_INSIDE.txt
+- Create new YouTube playlist to store all music and put its ID into PUT_PLAYLIST_ID_INSIDE.txt
 
 # Bugs
 - memory spike after playlist update
